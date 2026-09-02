@@ -1,0 +1,4 @@
+node_modules/
+dist/
+*.class
+shell-scripting/demo_dir/
