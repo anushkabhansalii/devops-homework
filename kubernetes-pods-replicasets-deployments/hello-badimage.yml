@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Pod
+
+metadata:
+  name: hello-badimage-pod
+
+spec:
+  restartPolicy: Never
+
+  containers:
+    - name: hello
+      image: thisimagedoesnotexist123
