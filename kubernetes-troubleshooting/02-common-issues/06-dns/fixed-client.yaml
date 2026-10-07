@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dns-client
+spec:
+  containers:
+    - name: client
+      image: curlimages/curl:8.6.0
+      command: ["sh", "-c"]
+      args:
+        - |
+          while true; do
+            # correct FQDN: <service>.<namespace>.svc.cluster.local
+            curl -s -o /dev/null -w "%{http_code}\n" --connect-timeout 3 http://web-service.default.svc.cluster.local || echo "request failed"
+            sleep 5
+          done

@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: crash-demo
+spec:
+  containers:
+    - name: app
+      image: python:3.11-alpine
+      command: ["python3", "-u", "-c"]   # -u = unbuffered stdout so kubectl logs shows prints immediately
+      env:
+        - name: DATABASE_URL
+          value: postgres://db.default.svc.cluster.local:5432/app
+      args:
+        - |
+          import os, sys
+          print("Application starting...")
+          db = os.environ.get("DATABASE_URL")
+          if not db:
+              print("[FATAL] DATABASE_URL environment variable is missing!", file=sys.stderr)
+              sys.exit(1)
+          print("Connected to", db)
+          import time; time.sleep(3600)
