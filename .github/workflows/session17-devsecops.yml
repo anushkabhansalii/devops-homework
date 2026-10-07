@@ -1,0 +1,271 @@
+# Session 17 - DevSecOps pipeline
+#
+#   Build -> Unit Test -> SAST (Bandit) ─┐
+#                      -> SCA (pip-audit) ┤
+#                      -> Secret scan     ├─> Security Gate -> Push image (GHCR) -> Deploy (kind)
+#                      -> Docker build -> Image scan (Trivy) ┘
+#
+# The security gate only lets the image be pushed/deployed if EVERY scan passed.
+# Run it manually with "inject_vulnerable_dependency" = true to watch the gate block a bad build.
+name: "Session 17 - DevSecOps"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "devsecops/**"
+      - ".github/workflows/session17-devsecops.yml"
+  pull_request:
+    paths:
+      - "devsecops/**"
+  workflow_dispatch:
+    inputs:
+      inject_vulnerable_dependency:
+        description: "Add a known-vulnerable package (requests==2.25.1) before the SCA scan to demo the security gate"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: devsecops
+
+env:
+  IMAGE_NAME: devsecops-app
+  REGISTRY_IMAGE: ghcr.io/${{ github.repository_owner }}/devsecops-app
+  TRIVY_IMAGE: aquasec/trivy:0.65.0           # pinned (trivy-action tags were hijacked in a 2026 supply-chain attack)
+  GITLEAKS_IMAGE: ghcr.io/gitleaks/gitleaks:v8.28.0
+
+jobs:
+  build:
+    name: 1. Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: devsecops/requirements-dev.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Byte-compile the application
+        run: python -m compileall -q app && echo "Build OK"
+
+  unit-test:
+    name: 2. Unit tests
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: devsecops/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - name: pytest + coverage
+        run: pytest -v --cov=app --cov-report=term-missing --cov-report=xml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: devsecops/coverage.xml
+
+  sast:
+    name: 3. SAST (Bandit)
+    needs: unit-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install bandit==1.9.4
+      - name: Full report (all severities, informational)
+        run: bandit -r app -f json -o bandit-report.json --exit-zero && bandit -r app --exit-zero
+      - name: Fail on MEDIUM or HIGH severity findings
+        run: bandit -r app -ll -ii
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sast-bandit-report
+          path: devsecops/bandit-report.json
+
+  sca:
+    name: 4. SCA (pip-audit)
+    needs: unit-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install pip-audit==2.9.0
+      - name: Inject vulnerable dependency (demo only)
+        if: ${{ inputs.inject_vulnerable_dependency }}
+        run: |
+          echo "requests==2.25.1" >> requirements.txt
+          echo "::warning::Demo mode - injected requests==2.25.1 into requirements.txt"
+      - name: Audit dependencies against the PyPI/OSV advisory database
+        run: pip-audit -r requirements.txt --desc on -f columns
+      - name: Save JSON report
+        if: always()
+        run: pip-audit -r requirements.txt -f json -o sca-report.json || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sca-pip-audit-report
+          path: devsecops/sca-report.json
+
+  secret-scan:
+    name: 5. Secret scan (gitleaks)
+    needs: unit-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0                       # scan the whole git history, not just the last commit
+      - name: Scan git history of devsecops/
+        working-directory: .
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0="*" \
+            $GITLEAKS_IMAGE \
+            git . --log-opts="-- devsecops" --config devsecops/.gitleaks.toml --redact -v \
+            --report-format json --report-path /repo/gitleaks-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: secret-scan-gitleaks-report
+          path: gitleaks-report.json
+
+  docker-build:
+    name: 6. Docker build
+    needs: unit-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build image
+        run: docker build -t $IMAGE_NAME:${GITHUB_SHA::7} .
+      - name: Save image for the scan / push jobs
+        run: docker save $IMAGE_NAME:${GITHUB_SHA::7} -o /tmp/image.tar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp/image.tar
+          retention-days: 1
+
+  image-scan:
+    name: 7. Image scan (Trivy)
+    needs: docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+      - name: Load image
+        working-directory: .
+        run: docker load -i /tmp/image.tar
+      - name: Full report (all severities, informational)
+        working-directory: .
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/out" $TRIVY_IMAGE \
+            image --no-progress --format json --output /out/trivy-report.json $IMAGE_NAME:${GITHUB_SHA::7}
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock $TRIVY_IMAGE \
+            image --no-progress --format table $IMAGE_NAME:${GITHUB_SHA::7}
+      - name: Fail on fixable HIGH / CRITICAL vulnerabilities
+        working-directory: .
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock $TRIVY_IMAGE \
+            image --no-progress --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 $IMAGE_NAME:${GITHUB_SHA::7}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: image-scan-trivy-report
+          path: trivy-report.json
+
+  security-gate:
+    name: 8. Security gate
+    needs: [sast, sca, secret-scan, image-scan]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Evaluate scan results
+        working-directory: .
+        run: |
+          {
+            echo "## Security gate"
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| SAST (Bandit) | ${{ needs.sast.result }} |"
+            echo "| SCA (pip-audit) | ${{ needs.sca.result }} |"
+            echo "| Secret scan (gitleaks) | ${{ needs.secret-scan.result }} |"
+            echo "| Image scan (Trivy) | ${{ needs.image-scan.result }} |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          for r in "${{ needs.sast.result }}" "${{ needs.sca.result }}" "${{ needs.secret-scan.result }}" "${{ needs.image-scan.result }}"; do
+            if [ "$r" != "success" ]; then
+              echo "::error::Security gate FAILED - image will NOT be pushed or deployed"
+              echo "**GATE: FAILED - push and deploy blocked**" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+          done
+          echo "Security gate PASSED - all scans clean"
+          echo "**GATE: PASSED**" >> "$GITHUB_STEP_SUMMARY"
+
+  push:
+    name: 9. Push image (GHCR)
+    needs: security-gate
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+      - name: Load, tag and push
+        working-directory: .
+        run: |
+          docker load -i /tmp/image.tar
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker tag $IMAGE_NAME:${GITHUB_SHA::7} $REGISTRY_IMAGE:${GITHUB_SHA::7}
+          docker tag $IMAGE_NAME:${GITHUB_SHA::7} $REGISTRY_IMAGE:latest
+          docker push $REGISTRY_IMAGE:${GITHUB_SHA::7}
+          docker push $REGISTRY_IMAGE:latest
+
+  deploy:
+    name: 10. Deploy to Kubernetes (kind)
+    needs: push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: devsecops
+      - name: Pull the scanned image from GHCR into kind
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull $REGISTRY_IMAGE:${GITHUB_SHA::7}
+          docker tag $REGISTRY_IMAGE:${GITHUB_SHA::7} $IMAGE_NAME:${GITHUB_SHA::7}
+          kind load docker-image $IMAGE_NAME:${GITHUB_SHA::7} --name devsecops
+      - name: Deploy
+        run: |
+          sed -i "s|__IMAGE_TAG__|${GITHUB_SHA::7}|" k8s/deployment.yaml
+          kubectl apply -f k8s/
+          kubectl rollout status deployment/devsecops-app --timeout=120s
+          kubectl get pods,svc -o wide
+      - name: Smoke test
+        run: |
+          kubectl port-forward svc/devsecops-app 5001:80 >/dev/null 2>&1 &
+          sleep 3
+          curl -sf localhost:5001/health
+          echo
+          curl -s localhost:5001/api/status
