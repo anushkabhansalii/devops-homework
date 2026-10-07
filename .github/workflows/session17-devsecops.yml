@@ -269,3 +269,9 @@ jobs:
           curl -sf localhost:5001/health
           echo
           curl -s localhost:5001/api/status
+      - name: Debug info on failure
+        if: failure()
+        run: |
+          kubectl get pods -o wide
+          kubectl describe pods -l app=devsecops-app | tail -30
+          kubectl get events --sort-by=.lastTimestamp | tail -20

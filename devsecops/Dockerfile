@@ -9,7 +9,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
  && pip uninstall -y pip setuptools wheel
 COPY app ./app
-RUN adduser -D -H appuser
-USER appuser
+# numeric UID: Kubernetes runAsNonRoot cannot verify a user *name* is non-root
+RUN adduser -D -H -u 10001 appuser
+USER 10001
 EXPOSE 5001
 CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "2", "app.app:app"]
