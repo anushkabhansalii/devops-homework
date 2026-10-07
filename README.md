@@ -16,3 +16,4 @@
 | Kubernetes Networking & Services | [`kubernetes-networking-services/`](./kubernetes-networking-services) | `kubernetes-networking-services/README.md` |
 | Kubernetes Ingress, ConfigMaps & Secrets | [`kubernetes-ingress-configmaps-secrets/`](./kubernetes-ingress-configmaps-secrets) | `kubernetes-ingress-configmaps-secrets/README.md` |
 | Kubernetes Storage, HPA & Probes | [`kubernetes-storage-hpa-probes/`](./kubernetes-storage-hpa-probes) | `kubernetes-storage-hpa-probes/README.md` |
+| Helm | [`helm/`](./helm) | `helm/README.md` |
