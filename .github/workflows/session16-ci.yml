@@ -1,0 +1,107 @@
+# Session 16 - CI: lint -> test (matrix) -> build (artifact + docker image), plus a secrets demo.
+name: "Session 16 - CI"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "github-actions-cicd/**"
+      - ".github/workflows/session16-*.yml"
+  pull_request:
+    paths:
+      - "github-actions-cicd/**"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: github-actions-cicd
+
+jobs:
+  lint:
+    name: Lint (flake8)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v5
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: github-actions-cicd/requirements-dev.txt
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Run flake8
+        run: flake8 app tests
+
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: github-actions-cicd/requirements-dev.txt
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Run tests with coverage
+        run: pytest -v --junitxml=report.xml --cov=app --cov-report=term-missing
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-py${{ matrix.python-version }}
+          path: github-actions-cicd/report.xml
+
+  build:
+    name: Build application + Docker image
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build application package
+        run: ./build.sh
+      - name: Show build info
+        run: cat build/build-info.txt
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: calculator-build
+          path: github-actions-cicd/build/
+      - name: Build Docker image
+        run: docker build --build-arg APP_VERSION=${GITHUB_SHA::7} -t calculator-api:${GITHUB_SHA::7} .
+      - name: Smoke test the container
+        run: |
+          docker run -d --name api -p 5000:5000 calculator-api:${GITHUB_SHA::7}
+          for i in $(seq 1 15); do curl -sf localhost:5000/health && break; sleep 1; done
+          curl -s "localhost:5000/api/add?a=10&b=5"
+          docker rm -f api
+      - name: Save image as artifact
+        run: docker save calculator-api:${GITHUB_SHA::7} | gzip > calculator-api-image.tar.gz
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: calculator-api-image
+          path: github-actions-cicd/calculator-api-image.tar.gz
+          retention-days: 3
+
+  secrets-demo:
+    name: Secrets demo
+    runs-on: ubuntu-latest
+    steps:
+      - name: Use a secret without leaking it
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}              # built-in secret, created per run
+          OPTIONAL_KEY: ${{ secrets.DEMO_API_KEY }}       # repo secret (empty if not configured)
+        working-directory: .
+        run: |
+          echo "GITHUB_TOKEN is available: $([ -n "$TOKEN" ] && echo yes || echo no) (length ${#TOKEN})"
+          echo "Trying to print it directly -> $TOKEN"       # GitHub masks it as ***
+          if [ -n "$OPTIONAL_KEY" ]; then echo "DEMO_API_KEY configured"; else echo "DEMO_API_KEY not configured - skipping"; fi

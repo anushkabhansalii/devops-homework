@@ -1,0 +1,8 @@
+tests/
+screenshots/
+k8s/
+*.md
+.venv/
+__pycache__/
+.pytest_cache/
+build/
