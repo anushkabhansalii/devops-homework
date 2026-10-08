@@ -1,6 +1,6 @@
 # Session 17 - DevSecOps pipeline
 #
-#   Build -> Unit Test -> SAST (Bandit) ─┐
+#   Build -> Unit Test -> SAST (Bandit + CodeQL) ─┐
 #                      -> SCA (pip-audit) ┤
 #                      -> Secret scan     ├─> Security Gate -> Push image (GHCR) -> Deploy (kind)
 #                      -> Docker build -> Image scan (Trivy) ┘
@@ -92,6 +92,23 @@ jobs:
         with:
           name: sast-bandit-report
           path: devsecops/bandit-report.json
+
+  codeql:
+    name: 3b. SAST (CodeQL)
+    needs: unit-test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write          # upload results to the repo's Security > Code scanning tab
+    steps:
+      - uses: actions/checkout@v5
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: python
+          source-root: devsecops
+      - name: Analyze code
+        uses: github/codeql-action/analyze@v4
 
   sca:
     name: 4. SCA (pip-audit)
@@ -189,7 +206,7 @@ jobs:
 
   security-gate:
     name: 8. Security gate
-    needs: [sast, sca, secret-scan, image-scan]
+    needs: [sast, codeql, sca, secret-scan, image-scan]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -201,11 +218,12 @@ jobs:
             echo "| Check | Result |"
             echo "|---|---|"
             echo "| SAST (Bandit) | ${{ needs.sast.result }} |"
+            echo "| SAST (CodeQL) | ${{ needs.codeql.result }} |"
             echo "| SCA (pip-audit) | ${{ needs.sca.result }} |"
             echo "| Secret scan (gitleaks) | ${{ needs.secret-scan.result }} |"
             echo "| Image scan (Trivy) | ${{ needs.image-scan.result }} |"
           } | tee -a "$GITHUB_STEP_SUMMARY"
-          for r in "${{ needs.sast.result }}" "${{ needs.sca.result }}" "${{ needs.secret-scan.result }}" "${{ needs.image-scan.result }}"; do
+          for r in "${{ needs.sast.result }}" "${{ needs.codeql.result }}" "${{ needs.sca.result }}" "${{ needs.secret-scan.result }}" "${{ needs.image-scan.result }}"; do
             if [ "$r" != "success" ]; then
               echo "::error::Security gate FAILED - image will NOT be pushed or deployed"
               echo "**GATE: FAILED - push and deploy blocked**" >> "$GITHUB_STEP_SUMMARY"
