@@ -375,3 +375,83 @@ NAME	NAMESPACE	REVISION	UPDATED	STATUS	CHART	APP VERSION
 ![notes install dev](screenshots/13-notes-install-dev.png)
 ![notes upgrade prod](screenshots/14-notes-upgrade-prod.png)
 ![notes rollback + uninstall](screenshots/15-notes-rollback-uninstall.png)
+
+---
+
+## Class exercises (from the lecture) — [`class-exercises/`](./class-exercises)
+Run with [`class-exercises/run.sh`](./class-exercises/run.sh).
+
+### A chart from Artifact Hub: install, list, uninstall, repo remove
+```text
+$ helm repo add bitnami https://charts.bitnami.com/bitnami --force-update
+$ helm repo update bitnami
+$ helm install my-nginx bitnami/nginx --set service.type=ClusterIP
+NAME: my-nginx
+STATUS: deployed
+REVISION: 1
+CHART NAME: nginx
+CHART VERSION: 25.2.1
+$ helm list
+my-nginx	default	1	deployed	nginx-25.2.1	1.31.6
+$ helm uninstall my-nginx
+release "my-nginx" uninstalled            <- removes every object the release created
+$ helm repo remove bitnami
+"bitnami" has been removed from your repositories
+```
+Like `docker pull` but for a whole application: Helm downloaded the chart (Deployment, Service, ...) and installed it as one release.
+
+### `helm lint` catches a typo before deploying
+```text
+$ helm lint simple-chart
+1 chart(s) linted, 0 chart(s) failed
+# broke the indentation of `replicas:` in templates/deployment.yaml
+$ helm lint /tmp/lint-demo
+[ERROR] templates/deployment.yaml: unable to parse YAML: error converting YAML to JSON: yaml: line 7: mapping values are not allowed in this context
+Error: 1 chart(s) linted, 1 chart(s) failed
+```
+Order to follow for any custom chart: **`helm lint` → `helm template` (dry run) → `helm install`**.
+
+### `install` vs `upgrade` vs `upgrade --install`
+```text
+$ helm upgrade my-app simple-chart
+Error: UPGRADE FAILED: "my-app" has no deployed releases          <- upgrade needs an existing release
+$ helm upgrade --install my-app simple-chart
+STATUS: deployed   REVISION: 1                                     <- creates it if missing
+$ helm upgrade --install my-app simple-chart --set replicaCount=3
+STATUS: deployed   REVISION: 2                                     <- upgrades it if present
+$ helm install my-app simple-chart
+Error: INSTALLATION FAILED: ... cannot reuse a name that is still in use   <- install only creates
+```
+| Command | Release missing | Release exists |
+|---|---|---|
+| `helm install` | creates (rev 1) | **error** (like `kubectl create`) |
+| `helm upgrade` | **error** | new revision (like `kubectl apply`) |
+| `helm upgrade --install` | creates | new revision — what CI/CD pipelines use |
+| `helm uninstall` | error | deletes release + objects + history |
+
+`--set replicaCount=3` overrides a value at deploy time; doing that by hand instead of in a values file creates **drift** between Git and what is running.
+
+### Mini project — guestbook chart (`helm list`, `helm lint`, `helm status`)
+```text
+$ helm lint guestbook-chart
+1 chart(s) linted, 0 chart(s) failed
+$ helm install guestbook guestbook-chart
+STATUS: deployed   REVISION: 1
+$ helm list
+guestbook	default	1	deployed	guestbook-chart-0.1.0	1.0
+$ helm status guestbook
+RESOURCES:
+==> v1/Pod(related)    guestbook-app-5bf6d84bff-jq6wh   1/1   Running
+==> v1/ConfigMap       guestbook-config   2
+==> v1/Service         guestbook-svc   NodePort   10.105.80.151   80:30080/TCP
+==> v1/Deployment      guestbook-app   1/1
+$ kubectl exec deploy/guestbook-app -- env | grep -E 'welcome|appName'
+appName=My Guestbook
+welcome=Welcome to the Guestbook!
+```
+
+![bitnami install](screenshots/16-bitnami-install.png)
+![uninstall + repo remove](screenshots/17-bitnami-uninstall-repo-remove.png)
+![lint catches typo](screenshots/18-lint-catches-typo.png)
+![upgrade vs install](screenshots/19-upgrade-vs-install.png)
+![guestbook mini project](screenshots/20-guestbook-mini-project.png)
