@@ -1,0 +1,27 @@
+# Homework (class): paste the probe block into a pod whose container does NOT serve HTTP.
+# busybox just sleeps - nothing listens on port 80, so every httpGet probe fails.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: probes-on-broken-app
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh", "-c", "echo 'app started, but no web server'; sleep 3600"]
+      startupProbe:
+        httpGet:
+          path: /
+          port: 80
+        failureThreshold: 3
+        periodSeconds: 3
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 80
+        periodSeconds: 5
+      readinessProbe:
+        httpGet:
+          path: /
+          port: 80
+        periodSeconds: 5

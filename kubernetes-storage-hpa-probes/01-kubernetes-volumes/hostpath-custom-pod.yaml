@@ -1,0 +1,17 @@
+# Homework (class): hostPath volume with my own node path and my own mount path
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hostpath-anushka
+spec:
+  containers:
+    - name: app
+      image: nginx:1.27
+      volumeMounts:
+        - name: anushka-storage
+          mountPath: /anushka-data          # custom path inside the container
+  volumes:
+    - name: anushka-storage
+      hostPath:
+        path: /tmp/anushka-jain-data      # custom path on the node
+        type: DirectoryOrCreate

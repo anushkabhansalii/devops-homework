@@ -320,3 +320,33 @@ persistentvolume "student-pv" deleted
 
 **Cleanup**
 ![cleanup](screenshots/21-cleanup.png)
+
+---
+
+## Class homework (from the lecture)
+### hostPath with my own path — [`hostpath-custom-pod.yaml`](./01-kubernetes-volumes/hostpath-custom-pod.yaml)
+The class asked us to change the hostPath to our own path. Node path `/tmp/anushka-jain-data`, mounted at `/anushka-data`:
+```text
+$ kubectl exec hostpath-anushka -- sh -c 'echo "Anushka was here" > /anushka-data/note.txt'
+$ kubectl delete pod hostpath-anushka && kubectl apply -f 01-kubernetes-volumes/hostpath-custom-pod.yaml
+$ kubectl exec hostpath-anushka -- cat /anushka-data/note.txt
+Anushka was here
+$ minikube ssh -- ls -l /tmp/anushka-jain-data
+-rw-r--r-- 1 root root 17 Oct  8 05:05 note.txt
+```
+emptyDir = Pod-level, hostPath = node-level, PV/PVC = cluster-level storage.
+
+### Probes pasted into a broken pod — [`crashing-pod-with-probes.yaml`](./03-probes/crashing-pod-with-probes.yaml)
+The probe block added to a busybox container that never serves HTTP on port 80:
+```text
+$ kubectl get pod probes-on-broken-app
+NAME                   READY   STATUS    RESTARTS     AGE
+probes-on-broken-app   0/1     Running   3 (6s ago)   2m4s
+$ kubectl describe pod probes-on-broken-app
+  Normal   Killing    36s (x3 over 114s)  kubelet  Container app failed startup probe, will be restarted
+  Warning  Unhealthy  0s (x11 over 2m)    kubelet  Startup probe failed: Get "http://10.244.0.104:80/": dial tcp 10.244.0.104:80: connect: connection refused
+```
+Order: **startup** probe runs first (liveness and readiness wait for it); it failed 3 times (`failureThreshold: 3`), so the kubelet restarted the container again and again. The readiness and liveness probes never even ran.
+
+![hostPath custom path](screenshots/17-hostpath-custom.png)
+![probes failing](screenshots/18-probes-failing.png)
