@@ -1,0 +1,74 @@
+# Session 16 - the class exercise, built up step by step in the lecture:
+#   1. hello job (print message, date, OS) + my own "Show myself" step
+#   2. a second job (build) -> multiple jobs
+#   3. secret-demo -> fails until the DEMO_SECRET repository secret exists
+#   4. artifact job -> build.sh output uploaded as a downloadable zip
+#   5. on push (automatic) + workflow_dispatch (manual "Run workflow" button)
+name: Hello GitHub Actions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "github-actions-cicd/class-demo/**"
+      - ".github/workflows/session16-hello.yml"
+  workflow_dispatch:
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print message
+        run: echo "Hello from GitHub Actions!"
+      - name: Show date
+        run: date
+      - name: Show operating system
+        run: uname -a
+      - name: Show myself
+        run: echo "Hello, I am Anushka Jain - DevOps student"
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print message
+        run: echo "Hello from the build job - jobs run in parallel on separate runners"
+      - name: Show date
+        run: date
+      - name: Show operating system
+        run: uname -a
+
+  secret-demo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check secret
+        env:
+          DEMO_SECRET: ${{ secrets.DEMO_SECRET }}
+        run: |
+          if [ -n "$DEMO_SECRET" ]; then
+            echo "Secret is available."
+          else
+            echo "Secret is not configured."
+            exit 1
+          fi
+
+  artifact:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: github-actions-cicd/class-demo
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+      - name: Run build
+        run: |
+          chmod +x build.sh
+          ./build.sh
+      - name: Show build files
+        run: |
+          echo "Build output:"
+          ls -la build
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: session16-build
+          path: github-actions-cicd/class-demo/build/
