@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-frontend
+  labels:
+    app: {{ .Release.Name }}-frontend
+    {{- include "taskboard.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-frontend
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-frontend
+        {{- include "taskboard.labels" . | nindent 8 }}
+    spec:
+      securityContext: {{- include "taskboard.podSecurity" . | nindent 8 }}
+        runAsUser: 101
+      containers:
+        - name: frontend
+          image: "{{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}"
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.frontend.port }}
+          env:
+            - name: BACKEND_URL
+              value: "http://{{ .Release.Name }}-backend:8000"
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          resources: {{- toYaml .Values.frontend.resources | nindent 12 }}
+          securityContext: {{- include "taskboard.containerSecurity" . | nindent 12 }}
+          volumeMounts:          # nginx needs a few writable dirs when the root FS is read-only
+            - {name: cache, mountPath: /var/cache/nginx}
+            - {name: run, mountPath: /tmp}
+            - {name: conf, mountPath: /etc/nginx/conf.d}
+      volumes:
+        - {name: cache, emptyDir: {}}
+        - {name: run, emptyDir: {}}
+        - {name: conf, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-frontend
+  labels:
+    app: {{ .Release.Name }}-frontend
+    {{- include "taskboard.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: {{ .Release.Name }}-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

@@ -1,0 +1,13 @@
+# Production values - deployed by Argo CD (gitops/). The image tags are bumped automatically by the
+# CI/CD pipeline after a commit passes every test and security gate.
+environment: prod
+backend:
+  image:
+    repository: ghcr.io/anushkabhansalii/taskboard-backend
+    tag: latest
+frontend:
+  image:
+    repository: ghcr.io/anushkabhansalii/taskboard-frontend
+    tag: latest
+postgres:
+  existingSecret: taskboard-db      # created out-of-band (never committed to Git)

@@ -1,0 +1,56 @@
+# Default values (shared by every environment). Override per environment with values-<env>.yaml.
+environment: dev
+
+backend:
+  image:
+    repository: ghcr.io/anushkabhansalii/taskboard-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 2
+  port: 8000
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+  probes:
+    readinessPath: /ready      # checks the DB connection too
+    livenessPath: /health
+
+frontend:
+  image:
+    repository: ghcr.io/anushkabhansalii/taskboard-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 2
+  port: 8080
+  resources:
+    requests: {cpu: 20m, memory: 32Mi}
+    limits: {cpu: 200m, memory: 64Mi}
+
+postgres:
+  image: postgres:17-alpine
+  database: taskboard
+  username: taskboard
+  # password comes from a Secret: either created by the chart from `password`, or an existing one
+  password: change-me
+  existingSecret: ""
+  storage: 1Gi
+  storageClassName: ""          # "" = cluster default StorageClass
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+
+ingress:
+  enabled: true
+  className: nginx
+  host: taskboard.local
+
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 60
+
+monitoring:
+  serviceMonitor: true          # needs the Prometheus Operator CRDs (kube-prometheus-stack)
+  alerts: true
+  dashboard: true               # Grafana sidecar picks up ConfigMaps labelled grafana_dashboard=1

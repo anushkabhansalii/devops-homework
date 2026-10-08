@@ -1,0 +1,10 @@
+# Local minikube: images built locally and loaded with `minikube image load`
+environment: dev
+backend:
+  image: {repository: taskboard-backend, tag: dev, pullPolicy: Never}
+  replicas: 1
+frontend:
+  image: {repository: taskboard-frontend, tag: dev, pullPolicy: Never}
+  replicas: 1
+hpa:
+  enabled: false
