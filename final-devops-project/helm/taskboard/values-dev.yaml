@@ -8,3 +8,5 @@ frontend:
   replicas: 1
 hpa:
   enabled: false
+postgres:
+  existingSecret: taskboard-db      # created by gitops/create-db-secret.sh taskboard

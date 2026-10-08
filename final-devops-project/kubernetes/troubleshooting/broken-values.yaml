@@ -1,0 +1,10 @@
+# Final troubleshooting challenge: a "bad release" with several realistic mistakes baked in.
+# helm upgrade taskboard ../helm/taskboard -n taskboard -f ../helm/taskboard/values-dev.yaml -f troubleshooting/broken-values.yaml
+frontend:
+  image:
+    tag: dev-typo              # issue 1: image tag that does not exist
+ingress:
+  host: taskboard.locl         # issue 2: typo in the Ingress host
+backend:
+  probes:
+    readinessPath: /readyz     # issue 3: endpoint that doesn't exist in the API (it's /ready)

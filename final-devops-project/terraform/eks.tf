@@ -1,3 +1,10 @@
+# Customer-managed KMS key to encrypt Kubernetes Secrets at rest in etcd (envelope encryption)
+resource "aws_kms_key" "eks" {
+  description             = "${var.cluster_name} secrets encryption"
+  enable_key_rotation     = true
+  deletion_window_in_days = 7
+}
+
 resource "aws_eks_cluster" "main" {
   name     = var.cluster_name
   version  = var.kubernetes_version
@@ -6,7 +13,17 @@ resource "aws_eks_cluster" "main" {
   vpc_config {
     subnet_ids              = concat(aws_subnet.private[*].id, aws_subnet.public[*].id)
     endpoint_private_access = true
-    endpoint_public_access  = true
+    # public endpoint kept for kubectl from a laptop, but only from the admin's IP range
+    # (fully private would need a VPN / bastion - documented as an accepted risk)
+    endpoint_public_access = true
+    public_access_cidrs    = var.cluster_admin_cidrs
+  }
+
+  encryption_config {
+    resources = ["secrets"]
+    provider {
+      key_arn = aws_kms_key.eks.arn
+    }
   }
 
   enabled_cluster_log_types = ["api", "audit", "authenticator"]

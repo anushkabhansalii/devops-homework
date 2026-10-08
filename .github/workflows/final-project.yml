@@ -97,7 +97,8 @@ jobs:
           helm template taskboard final-devops-project/helm/taskboard -f final-devops-project/helm/taskboard/values-prod.yaml > /dev/null
       - name: IaC misconfiguration scan (informational)
         run: |
-          docker run --rm -v "$PWD:/src" $TRIVY_IMAGE config --severity HIGH,CRITICAL --exit-code 0 /src/final-devops-project/terraform /src/final-devops-project/helm
+          # one target: the project folder (Terraform, Helm chart and Dockerfiles)
+          docker run --rm -v "$PWD:/src" $TRIVY_IMAGE config --severity HIGH,CRITICAL --exit-code 0 /src/final-devops-project
 
   # ---------------------------------------------------------------- security
   sast:

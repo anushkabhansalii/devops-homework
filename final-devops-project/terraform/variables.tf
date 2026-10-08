@@ -13,6 +13,17 @@ variable "kubernetes_version" {
   default = "1.33"
 }
 
+variable "cluster_admin_cidrs" {
+  description = "CIDRs allowed to reach the public EKS API endpoint."
+  type        = list(string)
+  default     = ["203.0.113.10/32"]
+
+  validation {
+    condition     = !contains(var.cluster_admin_cidrs, "0.0.0.0/0")
+    error_message = "The EKS API must not be open to the whole internet."
+  }
+}
+
 variable "vpc_cidr" {
   type    = string
   default = "10.30.0.0/16"

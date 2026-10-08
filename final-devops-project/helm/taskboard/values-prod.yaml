@@ -11,3 +11,5 @@ frontend:
     tag: latest
 postgres:
   existingSecret: taskboard-db      # created out-of-band (never committed to Git)
+ingress:
+  host: taskboard-prod.local

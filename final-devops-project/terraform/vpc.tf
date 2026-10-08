@@ -19,7 +19,7 @@ resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.public_subnet_cidrs[count.index]
   availability_zone       = local.azs[count.index]
-  map_public_ip_on_launch = true
+  map_public_ip_on_launch = false # NAT gateway (EIP) and load balancers don't need auto-assigned IPs
   tags = {
     Name                                        = "${var.cluster_name}-public-${local.azs[count.index]}"
     "kubernetes.io/role/elb"                    = "1"

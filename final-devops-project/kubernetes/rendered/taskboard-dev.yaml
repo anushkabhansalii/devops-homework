@@ -1,0 +1,728 @@
+---
+# Source: taskboard/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskboard-config
+  labels:
+    app.kubernetes.io/part-of: taskboard
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: taskboard-1.0.0
+    environment: dev
+data:
+  APP_NAME: "TaskBoard API"
+  ENVIRONMENT: "dev"
+  DB_HOST: taskboard-postgres
+  DB_PORT: "5432"
+  DB_NAME: "taskboard"
+
+---
+# Source: taskboard/templates/monitoring.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskboard-dashboard
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: taskboard
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: taskboard-1.0.0
+    environment: dev
+data:
+  taskboard.json: |-
+    {
+      "uid": "taskboard",
+      "title": "TaskBoard - Application Overview",
+      "tags": [
+        "taskboard",
+        "final-project"
+      ],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "refresh": "10s",
+      "time": {
+        "from": "now-30m",
+        "to": "now"
+      },
+      "templating": {
+        "list": [
+          {
+            "name": "namespace",
+            "type": "custom",
+            "query": "taskboard",
+            "current": {
+              "text": "taskboard",
+              "value": "taskboard"
+            }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "type": "stat",
+          "title": "Requests / s",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(http_requests_total{namespace=\"$namespace\", handler!=\"/metrics\"}[1m]))"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "type": "stat",
+          "title": "Error rate (5xx)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(http_requests_total{namespace=\"$namespace\", status=~\"5.*\"}[5m])) / clamp_min(sum(rate(http_requests_total{namespace=\"$namespace\"}[5m])), 1e-9)"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "type": "stat",
+          "title": "p95 latency",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace=\"$namespace\", handler!=\"/metrics\"}[5m])))"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "type": "stat",
+          "title": "Backend pods ready",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 0,
+            "w": 6,
+            "h": 4
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(kube_deployment_status_replicas_available{namespace=\"$namespace\", deployment=~\".*-backend\"})"
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "type": "timeseries",
+          "title": "Requests / s by endpoint",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 4,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (handler, method) (rate(http_requests_total{namespace=\"$namespace\", handler!=\"/metrics\"}[1m]))",
+              "legendFormat": "{{method}} {{handler}}"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "type": "timeseries",
+          "title": "Latency p50 / p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 4,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(http_request_duration_seconds_bucket{namespace=\"$namespace\", handler!=\"/metrics\"}[1m])))",
+              "legendFormat": "p50"
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace=\"$namespace\", handler!=\"/metrics\"}[1m])))",
+              "legendFormat": "p95"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "type": "timeseries",
+          "title": "CPU by pod (cores)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 12,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", container!=\"\"}[1m]))",
+              "legendFormat": "{{pod}}"
+            }
+          ]
+        },
+        {
+          "id": 8,
+          "type": "timeseries",
+          "title": "Memory by pod",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 12,
+            "w": 12,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"$namespace\", container!=\"\"})",
+              "legendFormat": "{{pod}}"
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "type": "timeseries",
+          "title": "Responses by status code",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 20,
+            "w": 24,
+            "h": 8
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps"
+            },
+            "overrides": []
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (status) (rate(http_requests_total{namespace=\"$namespace\", handler!=\"/metrics\"}[1m]))",
+              "legendFormat": "{{status}}"
+            }
+          ]
+        }
+      ]
+    }
+
+---
+# Source: taskboard/templates/backend.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskboard-backend
+  labels:
+    app: taskboard-backend
+    app.kubernetes.io/part-of: taskboard
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: taskboard-1.0.0
+    environment: dev
+spec:
+  selector:
+    app: taskboard-backend
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+
+---
+# Source: taskboard/templates/frontend.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskboard-frontend
+  labels:
+    app: taskboard-frontend
+    app.kubernetes.io/part-of: taskboard
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: taskboard-1.0.0
+    environment: dev
+spec:
+  selector:
+    app: taskboard-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+
+---
+# Source: taskboard/templates/postgres.yaml
+# PostgreSQL as a StatefulSet: stable name (taskboard-postgres-0) + its own PersistentVolumeClaim
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskboard-postgres
+  labels:
+    app.kubernetes.io/part-of: taskboard
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: taskboard-1.0.0
+    environment: dev
+spec:
+  clusterIP: None              # headless service for the StatefulSet
+  selector:
+    app: taskboard-postgres
+  ports:
+    - name: postgres
+      port: 5432
+
+---
+# Source: taskboard/templates/backend.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskboard-backend
+  labels:
+    app: taskboard-backend
+    app.kubernetes.io/part-of: taskboard
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: taskboard-1.0.0
+    environment: dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: taskboard-backend
+  template:
+    metadata:
+      labels:
+        app: taskboard-backend
+        app.kubernetes.io/part-of: taskboard
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: taskboard-1.0.0
+        environment: dev
+      annotations:
+        checksum/config: 8b5fbbf0ff334c4be87568d8e2a8dac577948a018018abda2418fa0d534a79c6
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+        runAsUser: 10001
+      initContainers:
+        # don't start the API (and its DB migrations) until PostgreSQL accepts connections
+        - name: wait-for-db
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z -w 2 $(DB_HOST) $(DB_PORT); do echo waiting for $(DB_HOST):$(DB_PORT); sleep 2; done"]
+          envFrom:
+            - configMapRef:
+                name: taskboard-config
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 50m, memory: 32Mi}
+      containers:
+        - name: backend
+          image: "taskboard-backend:dev"
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: taskboard-config
+          env:
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: taskboard-db
+                  key: POSTGRES_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: taskboard-db
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+psycopg://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)"
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 3
+            failureThreshold: 40          # migrations + start get up to 2 minutes
+          readinessProbe:
+            httpGet: {path: /ready, port: http}
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+---
+# Source: taskboard/templates/frontend.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskboard-frontend
+  labels:
+    app: taskboard-frontend
+    app.kubernetes.io/part-of: taskboard
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: taskboard-1.0.0
+    environment: dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: taskboard-frontend
+  template:
+    metadata:
+      labels:
+        app: taskboard-frontend
+        app.kubernetes.io/part-of: taskboard
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: taskboard-1.0.0
+        environment: dev
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+        runAsUser: 101
+      containers:
+        - name: frontend
+          image: "taskboard-frontend:dev"
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: BACKEND_URL
+              value: "http://taskboard-backend:8000"
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 200m
+              memory: 64Mi
+            requests:
+              cpu: 20m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:          # nginx needs a few writable dirs when the root FS is read-only
+            - {name: cache, mountPath: /var/cache/nginx}
+            - {name: run, mountPath: /tmp}
+            - {name: conf, mountPath: /etc/nginx/conf.d}
+      volumes:
+        - {name: cache, emptyDir: {}}
+        - {name: run, emptyDir: {}}
+        - {name: conf, emptyDir: {}}
+
+---
+# Source: taskboard/templates/postgres.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: taskboard-postgres
+  labels:
+    app.kubernetes.io/part-of: taskboard
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: taskboard-1.0.0
+    environment: dev
+spec:
+  serviceName: taskboard-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: taskboard-postgres
+  template:
+    metadata:
+      labels:
+        app: taskboard-postgres
+        app.kubernetes.io/part-of: taskboard
+        app.kubernetes.io/managed-by: Helm
+        helm.sh/chart: taskboard-1.0.0
+        environment: dev
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70          # postgres user in the alpine image
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: "taskboard"
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          envFrom:
+            - secretRef:
+                name: taskboard-db
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            periodSeconds: 15
+            failureThreshold: 4
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run              # unix socket + lock files
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+
+---
+# Source: taskboard/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: taskboard
+  labels:
+    app.kubernetes.io/part-of: taskboard
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: taskboard-1.0.0
+    environment: dev
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: taskboard.local
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: taskboard-backend
+                port: {name: http}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: taskboard-frontend
+                port: {name: http}
+
+---
+# Source: taskboard/templates/monitoring.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: taskboard-alerts
+  labels:
+    app.kubernetes.io/part-of: taskboard
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: taskboard-1.0.0
+    environment: dev
+spec:
+  groups:
+    - name: taskboard.rules
+      rules:
+        - alert: TaskBoardBackendDown
+          expr: (kube_deployment_status_replicas_available{namespace="taskboard", deployment="taskboard-backend"} or on() vector(0)) < 1
+          for: 1m
+          labels: {severity: critical}
+          annotations:
+            summary: TaskBoard API has no ready pods
+        - alert: TaskBoardHighErrorRate
+          expr: |
+            sum(rate(http_requests_total{namespace="taskboard", status=~"5.*"}[5m]))
+              / clamp_min(sum(rate(http_requests_total{namespace="taskboard"}[5m])), 1e-9) > 0.05
+          for: 2m
+          labels: {severity: warning}
+          annotations:
+            summary: "More than 5% of API requests fail ({{ $value | humanizePercentage }})"
+        - alert: TaskBoardSlowRequests
+          expr: |
+            histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace="taskboard", handler!="/metrics"}[5m]))) > 0.5
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: "p95 API latency above 500ms"
+        - alert: TaskBoardPodRestarting
+          expr: increase(kube_pod_container_status_restarts_total{namespace="taskboard"}[10m]) > 2
+          labels: {severity: warning}
+          annotations:
+            summary: "{{ $labels.pod }} restarted more than twice in 10 minutes"
+
+---
+# Source: taskboard/templates/monitoring.yaml
+# Prometheus scrapes the backend's /metrics (prometheus-fastapi-instrumentator)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: taskboard-backend
+  labels:
+    app.kubernetes.io/part-of: taskboard
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: taskboard-1.0.0
+    environment: dev
+spec:
+  selector:
+    matchLabels:
+      app: taskboard-backend
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
