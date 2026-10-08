@@ -164,6 +164,9 @@ ENVIRONMENT=staging            <- now picked up, after a fresh container start
 ```
 Patching a ConfigMap does not restart pods or refresh already-injected env vars — you need an explicit `kubectl rollout restart` to force new containers to read the updated value.
 
+## Ingress vs Ingress Controller
+Research write-up (homework): **[`INGRESS-VS-INGRESS-CONTROLLER.md`](./INGRESS-VS-INGRESS-CONTROLLER.md)** — the Ingress is the routing-rules object, the Ingress Controller is the running nginx that reads those rules and actually carries the traffic.
+
 ## Cleanup
 ```text
 $ bash cleanup.sh
