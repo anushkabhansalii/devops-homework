@@ -1,0 +1,22 @@
+# Applied ONCE by an admin (kubectl apply -f). It is deliberately OUTSIDE app/, the folder Argo CD watches.
+# From then on, the only way to change what runs in the cluster is a Git commit to app/.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: session20-gitops
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/anushkabhansalii/devops-homework.git
+    targetRevision: main
+    path: monitoring-gitops/03-gitops/app
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: session20-gitops
+  syncPolicy:
+    automated:
+      prune: true      # delete resources that were removed from Git
+      selfHeal: true   # revert manual changes made in the cluster (drift)
+    syncOptions:
+      - CreateNamespace=true
