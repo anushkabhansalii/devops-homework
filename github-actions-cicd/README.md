@@ -178,6 +178,26 @@ The `/` endpoint reports `version: 0a5e0d3` — the commit that triggered the pi
 
 > The deploy target is a throwaway **kind** (Kubernetes-in-Docker) cluster created inside the GitHub runner, so the pipeline proves the full deploy path without needing a real cluster. Pointing it at a real cluster means replacing the kind step with a kubeconfig (stored as a secret) or OIDC auth to EKS/GKE/AKS.
 
+## Class exercises (from the lecture)
+**Hello GitHub Actions** — [`.github/workflows/session16-hello.yml`](../.github/workflows/session16-hello.yml), built up in class:
+`hello` job (print message, `date`, `uname -a`, plus my own **Show myself** step) → a second `build` job (multiple jobs run in parallel) → `secret-demo` → `artifact` job (`build.sh` → `upload-artifact`) → triggered automatically `on: push` and manually with `workflow_dispatch`.
+```text
+X main Hello GitHub Actions · 37731519513
+✓ build      ✓ artifact      ✓ hello      X secret-demo
+hello:        Hello from GitHub Actions!
+              Thu Oct  8 05:16:12 UTC 2026
+              Linux runnervmmprz5 6.17.0-1022-azure ... x86_64 GNU/Linux
+              Hello, I am Anushka Jain - DevOps student
+secret-demo:  Secret is not configured.  ->  exit code 1
+artifact:     session16-build  491 bytes
+```
+`secret-demo` fails on purpose, exactly like in class: `secrets.DEMO_SECRET` doesn't exist yet. Creating it under **Settings → Secrets and variables → Actions → New repository secret** (name `DEMO_SECRET`) and choosing **Re-run failed jobs** turns it green with `Secret is available.` The value can never be viewed again after saving, only replaced.
+
+**Homework — Final CI Pipeline** (the class calculator project in [`final-cicd-pipeline/`](./final-cicd-pipeline)): test → (build + security-check), all green. Analysis: **[`final-cicd-pipeline/research.md`](./final-cicd-pipeline/research.md)**.
+
+![class hello workflow](screenshots/07-class-hello-workflow.png)
+![final cicd pipeline](screenshots/08-final-cicd-pipeline.png)
+
 ## Run it locally
 ```bash
 cd github-actions-cicd
