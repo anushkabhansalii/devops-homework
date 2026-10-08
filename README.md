@@ -16,4 +16,8 @@
 | Kubernetes Networking & Services | [`kubernetes-networking-services/`](./kubernetes-networking-services) | `kubernetes-networking-services/README.md` |
 | Kubernetes Ingress, ConfigMaps & Secrets | [`kubernetes-ingress-configmaps-secrets/`](./kubernetes-ingress-configmaps-secrets) | `kubernetes-ingress-configmaps-secrets/README.md` |
 | Kubernetes Storage, HPA & Probes | [`kubernetes-storage-hpa-probes/`](./kubernetes-storage-hpa-probes) | `kubernetes-storage-hpa-probes/README.md` |
+| Kubernetes Troubleshooting | [`kubernetes-troubleshooting/`](./kubernetes-troubleshooting) | `kubernetes-troubleshooting/README.md` |
 | Helm | [`helm/`](./helm) | `helm/README.md` |
+| CI/CD & GitHub Actions | [`github-actions-cicd/`](./github-actions-cicd) | `github-actions-cicd/README.md` |
+| CI/CD & DevSecOps | [`devsecops/`](./devsecops) | `devsecops/README.md` |
+| Terraform & IaC (+ AWS services) | [`terraform-iac/`](./terraform-iac) | `terraform-iac/README.md` |
