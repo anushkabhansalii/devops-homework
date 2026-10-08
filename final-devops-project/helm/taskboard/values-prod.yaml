@@ -4,11 +4,11 @@ environment: prod
 backend:
   image:
     repository: ghcr.io/anushkabhansalii/taskboard-backend
-    tag: "0b26cf9"
+    tag: "c6655d1"
 frontend:
   image:
     repository: ghcr.io/anushkabhansalii/taskboard-frontend
-    tag: "0b26cf9"
+    tag: "c6655d1"
 postgres:
   existingSecret: taskboard-db      # created out-of-band (never committed to Git)
 ingress:
