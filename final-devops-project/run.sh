@@ -24,10 +24,12 @@ screenshot() {  # url outfile [width,height]
   local t; t=$(mktemp -d)
   "$CHROME" --headless=new --disable-gpu --hide-scrollbars --user-data-dir="$t" --window-size="${3:-1440,900}" \
     --virtual-time-budget=15000 --screenshot="$SHOT_DIR/$2" "$1" >/dev/null 2>&1 & local c=$!
-  sleep 25; kill $c 2>/dev/null || true; rm -rf "$t"
+  sleep 25; kill $c 2>/dev/null || true; sleep 2; rm -rf "$t" 2>/dev/null || true
 }
 COMPOSE="docker compose -f docker/docker-compose.yml"
-API="curl -s -H 'Host: taskboard.local' localhost:8090"   # through the NGINX Ingress controller
+API="curl -s -H 'Host: taskboard.local'"   # through the NGINX Ingress controller (port-forwarded to :8090)
+U=localhost:8090
+api() { curl -s -o /dev/null -H "Host: taskboard.local" "$U$1"; }   # quiet request, for generating traffic
 
 local_stack() {
   shot 01-compose-up
@@ -68,6 +70,11 @@ terraform_part() {
 }
 
 deploy() {
+  # minikube's hostpath provisioner leaves PV data on the node after the PVC/PV are deleted; a stale
+  # database would still have an OLD password while create-db-secret.sh generates a NEW one
+  if minikube ssh -- "sudo test -d /tmp/hostpath-provisioner/taskboard" 2>/dev/null && ! kubectl get ns taskboard >/dev/null 2>&1; then
+    echo "stale PostgreSQL data from a previous install found on the node - run ./run.sh cleanup first"; exit 1
+  fi
   shot 06-build-images
   run "docker build -q -f docker/backend.Dockerfile --build-arg APP_VERSION=dev-local -t taskboard-backend:dev application/backend"
   run "docker build -q -f docker/frontend.Dockerfile -t taskboard-frontend:dev application/frontend"
@@ -90,11 +97,13 @@ deploy() {
 
   shot 09-ingress-crud
   pf ingress-nginx ingress-nginx-controller 8090:80
-  run "$API/api/info"
-  run "$API -X POST localhost:8090/api/tasks -H 'Content-Type: application/json' -d '{\"title\":\"Deployed on Kubernetes\",\"priority\":\"HIGH\",\"assignee\":\"Anushka\"}'"
-  run "$API -X PUT localhost:8090/api/tasks/1 -H 'Content-Type: application/json' -d '{\"status\":\"DONE\"}' | jq -c '{id,title,status}'"
-  run "$API/api/tasks/stats"
-  run "$API/ | grep -o '<title>.*</title>'"
+  waitfor "curl -s -o /dev/null -w '%{http_code}' -H 'Host: taskboard.local' $U/api/info" '^200' 30
+  run kubectl -n taskboard get ingress taskboard
+  run "$API $U/api/info"
+  run "$API -X POST $U/api/tasks -H 'Content-Type: application/json' -d '{\"title\":\"Deployed on Kubernetes\",\"priority\":\"HIGH\",\"assignee\":\"Anushka\"}'"
+  run "$API -X PUT $U/api/tasks/1 -H 'Content-Type: application/json' -d '{\"status\":\"DONE\"}' | jq -c '{id,title,status}'"
+  run "$API $U/api/tasks/stats"
+  run "$API $U/ | grep -o '<title>.*</title>'"
 
   shot 10-storage-persistence
   run "kubectl -n taskboard get pvc,pv | grep -E 'NAME|taskboard'"
@@ -102,86 +111,107 @@ deploy() {
   kubectl -n taskboard wait --for=condition=Ready pod/taskboard-postgres-0 --timeout=180s >/dev/null
   sleep 5
   run kubectl -n taskboard get pod taskboard-postgres-0
-  run "$API/api/tasks | jq -c '.[] | {id,title,status}'"
+  run "$API $U/api/tasks | jq -c '.[] | {id,title,status}'"
 
   shot 11-monitoring
   pf monitoring prometheus-operated 9090:9090
   waitfor "curl -s localhost:9090/api/v1/targets | jq -r '.data.activeTargets[] | select(.labels.namespace==\"taskboard\") | .health'" '^up' 40
-  for _ in $(seq 1 60); do $API/api/tasks >/dev/null; $API/api/tasks/stats >/dev/null; $API/api/tasks/999 >/dev/null; done
+  for _ in $(seq 1 60); do api /api/tasks; api /api/tasks/stats; api /api/tasks/999; done
   sleep 35
   run "curl -s localhost:9090/api/v1/targets | jq -r '.data.activeTargets[] | select(.labels.namespace==\"taskboard\") | [.labels.job, .scrapeUrl, .health] | @tsv'"
-  run "../monitoring-gitops/01-monitoring/promql.sh 'sum by (handler, status) (rate(http_requests_total{namespace=\"taskboard\",handler!=\"/metrics\"}[1m]))' | sort"
+  run "curl -s localhost:9090/api/v1/query --data-urlencode 'query=sum by (handler, method, status) (rate(http_requests_total{namespace=\"taskboard\",handler!=\"/metrics\"}[1m]))' | jq -r '.data.result[] | [.metric.method, .metric.handler, .metric.status, (.value[1]|tonumber*100|round/100|tostring)+\" req/s\"] | @tsv' | sort | column -t"
   run "curl -s localhost:9090/api/v1/rules | jq -r '.data.groups[] | select(.name==\"taskboard.rules\") | .rules[] | [.name, .health, .state] | @tsv'"
   pf monitoring kps-grafana 3000:80
+  waitfor "curl -s 'localhost:3000/api/search?query=TaskBoard'" 'taskboard' 24
   run "curl -s 'localhost:3000/api/search?query=TaskBoard' | jq -r '.[] | [.uid, .title] | @tsv'"
-  for _ in $(seq 1 200); do $API/api/tasks >/dev/null; done
+  for _ in $(seq 1 200); do api /api/tasks; api /api/tasks/stats; done
   screenshot "http://localhost:3000/d/taskboard/?orgId=1&var-namespace=taskboard&from=now-15m&to=now&kiosk" grafana-taskboard.png 1600,1150
 }
 
 troubleshoot() {
-  pf ingress-nginx ingress-nginx-controller 8090:80
   BROKEN="-f helm/taskboard/values-dev.yaml -f kubernetes/troubleshooting/broken-values.yaml"
+  ingress_ready() { kubectl -n ingress-nginx rollout status deploy/ingress-nginx-controller --timeout=180s >/dev/null; }
+  ensure_pf() { curl -s -o /dev/null -m 3 localhost:8090 || { pkill -f 'port-forward -n ingress-nginx' 2>/dev/null || true; pf ingress-nginx ingress-nginx-controller 8090:80; }; }
+  newest() { kubectl -n taskboard get pods -l app=$1 --sort-by=.metadata.creationTimestamp -o name | tail -1; }
+  export -f newest
+  ingress_ready; ensure_pf
 
   shot 12-ts-break
   say "# a bad release goes out: helm upgrade with broken values + an out-of-band DB password 'rotation'"
   run "grep -v '^#' kubernetes/troubleshooting/broken-values.yaml"
   run "helm upgrade taskboard helm/taskboard -n taskboard $BROKEN | grep -E 'STATUS|REVISION'"
   run bash kubernetes/troubleshooting/break-db-secret.sh
-  sleep 60
+  waitfor "kubectl -n taskboard get pods -l app=taskboard-frontend" 'ErrImageNeverPull' 36
+  waitfor "kubectl -n taskboard get pods -l app=taskboard-backend" 'Error|CrashLoopBackOff' 36
+  ensure_pf
 
   shot 13-ts-identify
   say "# 1. IDENTIFY - users report the site is down"
-  run "$API/ -o /dev/null -w 'GET http://taskboard.local/          -> HTTP %{http_code}\\n'"
-  run "$API/api/info -o /dev/null -w 'GET http://taskboard.local/api/info  -> HTTP %{http_code}\\n'"
+  run "$API $U/ -o /dev/null -w 'GET http://taskboard.local/          -> HTTP %{http_code}\\n'"
+  run "$API $U/api/info -o /dev/null -w 'GET http://taskboard.local/api/info  -> HTTP %{http_code}\\n'"
   run kubectl -n taskboard get pods
   run kubectl -n taskboard get ingress
+  say "# note: the OLD backend/frontend pods are still Running - the rolling update never removes ready pods"
+  say "# while the new ones fail, so the pods are not what users are hitting. Start with the 404s."
 
   shot 14-ts-issue1-ingress
   say "# ISSUE 1 - every URL returns 404 from the ingress controller"
   run "kubectl -n taskboard get ingress taskboard -o jsonpath='{.spec.rules[0].host}{\"\\n\"}'"
   say "# root cause: Ingress host is 'taskboard.locl' (typo) -> requests for taskboard.local match no rule -> default backend 404"
-  run "helm upgrade taskboard helm/taskboard -n taskboard $BROKEN --set ingress.host=taskboard.local | grep REVISION"
+  ingress_ready
+  run "helm upgrade taskboard helm/taskboard -n taskboard $BROKEN --set ingress.host=taskboard.local | grep -E 'REVISION|Error'"
   run kubectl -n taskboard get ingress taskboard
+  ensure_pf
+  waitfor "$API $U/ -o /dev/null -w '%{http_code}'" '^200' 12
+  run "$API $U/ -o /dev/null -w 'GET http://taskboard.local/  -> HTTP %{http_code}\\n'"
 
   shot 15-ts-issue2-image
-  say "# ISSUE 2 - frontend pod never starts"
+  say "# ISSUE 2 - new frontend pod never starts"
   run "kubectl -n taskboard get pods -l app=taskboard-frontend"
-  run "kubectl -n taskboard describe pod -l app=taskboard-frontend | grep -E 'Image:|Warning' | sed 's/^ *//' | sort -u | cut -c1-170"
+  run "kubectl -n taskboard describe \$(newest taskboard-frontend) | grep -E 'Image:|Warning' | sed 's/^ *//' | cut -c1-170"
   run "minikube image ls | grep taskboard-frontend"
   say "# root cause: image tag 'dev-typo' does not exist (pullPolicy Never -> ErrImageNeverPull; from a registry it would be ImagePullBackOff)"
-  run "helm upgrade taskboard helm/taskboard -n taskboard $BROKEN --set ingress.host=taskboard.local --set frontend.image.tag=dev | grep REVISION"
+  ingress_ready
+  run "helm upgrade taskboard helm/taskboard -n taskboard $BROKEN --set ingress.host=taskboard.local --set frontend.image.tag=dev | grep -E 'REVISION|Error'"
   kubectl -n taskboard rollout status deploy/taskboard-frontend --timeout=180s >/dev/null
   run "kubectl -n taskboard get pods -l app=taskboard-frontend"
 
   shot 16-ts-issue3-db-secret
-  say "# ISSUE 3 - backend in CrashLoopBackOff"
+  say "# ISSUE 3 - new backend pods keep crashing"
   run "kubectl -n taskboard get pods -l app=taskboard-backend"
-  run "kubectl -n taskboard logs deploy/taskboard-backend --previous 2>/dev/null | grep -E 'OperationalError' | tail -1 | cut -c1-200"
+  run "kubectl -n taskboard logs \$(newest taskboard-backend) --previous 2>/dev/null | grep -E 'OperationalError' | tail -1 | cut -c1-210"
   say "# root cause: the Secret now holds a new password, but PostgreSQL still has the old one - the rotation was only half done"
-  say "# fix: finish the rotation - set the DB user's password to the value in the Secret, then restart the API"
+  say "# fix: finish the rotation - set the DB user's password to the value now in the Secret, then restart the API"
   say "\$ kubectl -n taskboard exec taskboard-postgres-0 -- psql -U taskboard -d taskboard -c \"ALTER USER taskboard PASSWORD '<value from secret/taskboard-db>'\""
   NEWPW=$(kubectl -n taskboard get secret taskboard-db -o jsonpath='{.data.POSTGRES_PASSWORD}' | base64 -d)
   kubectl -n taskboard exec taskboard-postgres-0 -- psql -U taskboard -d taskboard -c "ALTER USER taskboard PASSWORD '$NEWPW'" 2>&1 | tee -a "$CUR"
+  unset NEWPW
   echo | tee -a "$CUR"
   run kubectl -n taskboard rollout restart deployment/taskboard-backend
-  sleep 50
+  waitfor "kubectl -n taskboard get \$(newest taskboard-backend) -o jsonpath='{.status.phase}'" '^Running' 36
+  waitfor "kubectl -n taskboard describe \$(newest taskboard-backend)" 'Readiness probe failed' 36
 
   shot 17-ts-issue4-readiness
-  say "# ISSUE 4 - backend Running, no more crashes, but never Ready -> /api still fails"
+  say "# ISSUE 4 - the new backend pod is Running, no more crashes, but never becomes Ready"
   run "kubectl -n taskboard get pods -l app=taskboard-backend"
-  run "kubectl -n taskboard get endpointslices -l kubernetes.io/service-name=taskboard-backend -o jsonpath='{range .items[*].endpoints[*]}{.addresses[0]}  ready={.conditions.ready}{\"\\n\"}{end}'"
-  run "kubectl -n taskboard describe pod -l app=taskboard-backend | grep 'Readiness probe failed' | tail -1 | sed 's/^ *//' | cut -c1-170"
-  run "$API/api/info -o /dev/null -w 'GET /api/info -> HTTP %{http_code}\\n'"
-  say "# root cause: readinessProbe path /readyz does not exist (404) - the API's readiness endpoint is /ready"
-  run "helm upgrade taskboard helm/taskboard -n taskboard -f helm/taskboard/values-dev.yaml | grep REVISION"
+  run "kubectl -n taskboard get endpointslices -l kubernetes.io/service-name=taskboard-backend -o jsonpath='{range .items[*].endpoints[*]}{.targetRef.name}  ready={.conditions.ready}{\"\\n\"}{end}'"
+  run "kubectl -n taskboard describe \$(newest taskboard-backend) | grep 'Readiness probe failed' | tail -1 | sed 's/^ *//' | cut -c1-170"
+  run "kubectl -n taskboard exec \$(newest taskboard-backend) -- python -c \"import urllib.request as u; print(u.urlopen('http://localhost:8000/ready').read())\""
+  say "# root cause: readinessProbe path /readyz does not exist (404) - the API's readiness endpoint is /ready (which works)"
+  say "# the rollout is stuck: the old pod keeps serving, the new one never takes traffic"
+  ingress_ready
+  run "helm upgrade taskboard helm/taskboard -n taskboard -f helm/taskboard/values-dev.yaml | grep -E 'REVISION|Error'"
   kubectl -n taskboard rollout status deploy/taskboard-backend --timeout=180s >/dev/null
+  kubectl -n taskboard rollout status deploy/taskboard-frontend --timeout=180s >/dev/null
+  sleep 15; ensure_pf
 
   shot 18-ts-verify
   say "# VERIFY"
   run kubectl -n taskboard get pods
-  run "$API/ -o /dev/null -w 'GET http://taskboard.local/      -> HTTP %{http_code}\\n'"
-  run "$API/api/info"
-  run "$API/api/tasks/stats"
+  run "kubectl -n taskboard get endpointslices -l kubernetes.io/service-name=taskboard-backend -o jsonpath='{range .items[*].endpoints[*]}{.targetRef.name}  ready={.conditions.ready}{\"\\n\"}{end}'"
+  run "$API $U/ -o /dev/null -w 'GET http://taskboard.local/      -> HTTP %{http_code}\\n'"
+  run "$API $U/api/info"
+  run "$API $U/api/tasks | jq -c '.[] | {id,title,status}'"
   run "helm history taskboard -n taskboard | tail -6"
 }
 
@@ -205,7 +235,9 @@ cleanup() {
   kubectl delete -f gitops/argocd-application.yaml --ignore-not-found
   kubectl delete namespace taskboard-prod --ignore-not-found
   helm uninstall taskboard -n taskboard 2>/dev/null || true
-  kubectl delete namespace taskboard --ignore-not-found
+  kubectl delete namespace taskboard --ignore-not-found --wait
+  # the minikube hostpath provisioner does not wipe volume data when a PV is deleted - do it explicitly
+  minikube ssh -- "sudo rm -rf /tmp/hostpath-provisioner/taskboard /tmp/hostpath-provisioner/taskboard-prod" 2>/dev/null || true
   $COMPOSE down -v 2>/dev/null || true
 }
 

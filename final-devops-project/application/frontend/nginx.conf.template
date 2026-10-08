@@ -4,13 +4,21 @@ server {
   root /usr/share/nginx/html;
   index index.html;
 
+  # Resolve the backend at request time (not only once at start-up): if cluster DNS is briefly
+  # unavailable nginx returns a 502 for that request instead of failing to start
+  # ("host not found in upstream"). NGINX_LOCAL_RESOLVERS is filled in from /etc/resolv.conf by the
+  # image entrypoint because NGINX_ENTRYPOINT_LOCAL_RESOLVERS is set in the Dockerfile.
+  resolver ${NGINX_LOCAL_RESOLVERS} valid=10s ipv6=off;
+
   location / {
     try_files $uri /index.html;
   }
 
-  # API calls go to the backend Service (URL injected via the BACKEND_URL env var)
+  # API calls go to the backend Service. BACKEND_URL must be a name the resolver can look up
+  # directly (Kubernetes: the FQDN <svc>.<namespace>.svc.cluster.local - search domains don't apply).
   location /api/ {
-    proxy_pass ${BACKEND_URL};
+    set $backend_upstream ${BACKEND_URL};
+    proxy_pass $backend_upstream;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;

@@ -517,7 +517,7 @@ spec:
               containerPort: 8080
           env:
             - name: BACKEND_URL
-              value: "http://taskboard-backend:8000"
+              value: "http://taskboard-backend.taskboard.svc.cluster.local:8000"
           readinessProbe:
             httpGet: {path: /healthz, port: http}
             periodSeconds: 5
@@ -527,10 +527,10 @@ spec:
           resources:
             limits:
               cpu: 200m
-              memory: 64Mi
+              memory: 128Mi
             requests:
               cpu: 20m
-              memory: 32Mi
+              memory: 48Mi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

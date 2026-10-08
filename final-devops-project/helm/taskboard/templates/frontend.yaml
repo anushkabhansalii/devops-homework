@@ -27,7 +27,7 @@ spec:
               containerPort: {{ .Values.frontend.port }}
           env:
             - name: BACKEND_URL
-              value: "http://{{ .Release.Name }}-backend:8000"
+              value: "http://{{ .Release.Name }}-backend.{{ .Release.Namespace }}.svc.cluster.local:8000"
           readinessProbe:
             httpGet: {path: /healthz, port: http}
             periodSeconds: 5
