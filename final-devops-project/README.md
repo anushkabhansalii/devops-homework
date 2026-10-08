@@ -154,7 +154,7 @@ taskboard-prod-frontend-…   0/1   Error   3 restarts
 Reason: OOMKilled                     <- nginx "worker_processes auto" = 10 workers (one per node CPU) in a 64Mi limit
 nginx: [emerg] host not found in upstream "taskboard-prod-backend"   <- DNS blip while the node was NotReady; nginx resolves only at start
 ```
-**Fix in Git** ([0b26cf9](https://github.com/anushkabhansalii/devops-homework/commit/0b26cf9)): `worker_processes 2` + 128Mi limit; nginx `resolver` + variable `proxy_pass` with the Service FQDN so DNS is resolved per request (a DNS outage becomes a 502, not a dead pod — verified with compose by stopping the backend).
+**Fix in Git** ([c2092e6](https://github.com/anushkabhansalii/devops-homework/commit/c2092e6)): `worker_processes 2` + 128Mi limit; nginx `resolver` + variable `proxy_pass` with the Service FQDN so DNS is resolved per request (a DNS outage becomes a 502, not a dead pod — verified with compose by stopping the backend).
 
 **Pipeline → bot commit → Argo CD:**
 ```text

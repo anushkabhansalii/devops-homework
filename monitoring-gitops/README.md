@@ -265,7 +265,7 @@ Synced / Healthy  revision=3cd93e2067001d7c6361247d6e5a98a4617b9e2c     <- the c
 $ kubectl -n session20-gitops get deploy gitops-web -o jsonpath=...
 3 replicas, image nginx:1.28-alpine
 ```
-(Argo CD polls Git every ~3 minutes; I annotated the Application with `argocd.argoproj.io/refresh=normal` to make it check immediately — in production a GitHub webhook does this.) Commit: [3cd93e2](https://github.com/anushkabhansalii/devops-homework/commit/3cd93e2067001d7c6361247d6e5a98a4617b9e2c).
+(Argo CD polls Git every ~3 minutes; I annotated the Application with `argocd.argoproj.io/refresh=normal` to make it check immediately — in production a GitHub webhook does this.) Commit: [219404b](https://github.com/anushkabhansalii/devops-homework/commit/219404b7ac5c26f3b02ea0a46186e2de0cc8a6f0).
 
 ### 4. Drift → self-heal (Git wins)
 ```text
