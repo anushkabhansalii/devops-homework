@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring-demo
+---
+# nginx config: normal site on :80, stub_status (raw counters) on :8080 for the exporter
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-app-nginx
+  namespace: monitoring-demo
+data:
+  default.conf: |
+    server {
+      listen 80;
+      location / { root /usr/share/nginx/html; index index.html; }
+      location /healthz { return 200 "ok\n"; }
+    }
+    server {
+      listen 8080;
+      location /stub_status { stub_status; allow 127.0.0.1; deny all; }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app
+  namespace: monitoring-demo
+  labels: {app: demo-app}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: demo-app}
+  template:
+    metadata:
+      labels: {app: demo-app}
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27-alpine
+          ports:
+            - {name: http, containerPort: 80}
+          volumeMounts:
+            - {name: conf, mountPath: /etc/nginx/conf.d}
+          readinessProbe:
+            httpGet: {path: /healthz, port: 80}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: 80}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 50m, memory: 32Mi}
+            limits: {cpu: 300m, memory: 64Mi}
+        # sidecar: turns nginx stub_status into Prometheus metrics on :9113/metrics
+        - name: exporter
+          image: nginx/nginx-prometheus-exporter:1.4.2
+          args: ["--nginx.scrape-uri=http://127.0.0.1:8080/stub_status"]
+          ports:
+            - {name: metrics, containerPort: 9113}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 32Mi}
+      volumes:
+        - name: conf
+          configMap: {name: demo-app-nginx}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-app
+  namespace: monitoring-demo
+  labels: {app: demo-app}
+spec:
+  selector: {app: demo-app}
+  ports:
+    - {name: http, port: 80, targetPort: http}
+    - {name: metrics, port: 9113, targetPort: metrics}
+---
+# tells the Prometheus Operator to scrape the "metrics" port of every pod behind this Service
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: demo-app
+  namespace: monitoring-demo
+spec:
+  selector:
+    matchLabels: {app: demo-app}
+  endpoints:
+    - port: metrics
+      interval: 15s

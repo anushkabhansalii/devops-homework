@@ -22,3 +22,4 @@
 | CI/CD & DevSecOps | [`devsecops/`](./devsecops) | `devsecops/README.md` |
 | Terraform & IaC (+ AWS services) | [`terraform-iac/`](./terraform-iac) | `terraform-iac/README.md` |
 | Cloud & Terraform in Action (VPC, EC2, S3) | [`cloud-terraform/`](./cloud-terraform) | `cloud-terraform/README.md` |
+| Monitoring, Observability & GitOps | [`monitoring-gitops/`](./monitoring-gitops) | `monitoring-gitops/README.md` |

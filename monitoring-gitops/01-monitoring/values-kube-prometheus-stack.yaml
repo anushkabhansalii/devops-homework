@@ -1,0 +1,35 @@
+# Helm values for prometheus-community/kube-prometheus-stack (local minikube demo)
+grafana:
+  adminPassword: session20-demo          # local demo only - use an existing Secret in real clusters
+  grafana.ini:
+    auth.anonymous:
+      enabled: true                      # read-only Viewer access so dashboards can be screenshotted
+      org_role: Viewer
+  defaultDashboardsTimezone: browser
+
+prometheus:
+  prometheusSpec:
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    retention: 1d
+    # pick up ServiceMonitors / PrometheusRules from ANY namespace, not only ones labelled for this release
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests: {cpu: 200m, memory: 400Mi}
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests: {cpu: 10m, memory: 32Mi}
+
+# minikube's control-plane components don't expose metrics on the node IP; skip their scrape jobs
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false

@@ -1,0 +1,35 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: demo-app-alerts
+  namespace: monitoring-demo
+spec:
+  groups:
+    - name: demo-app.rules
+      rules:
+        - alert: DemoAppHighCPU
+          expr: sum by (pod) (rate(container_cpu_usage_seconds_total{namespace="monitoring-demo", container="nginx"}[1m])) > 0.05
+          for: 30s
+          labels: {severity: warning}
+          annotations:
+            summary: "High CPU on {{ $labels.pod }}"
+            description: "nginx in {{ $labels.pod }} is using {{ $value | humanize }} CPU cores (> 0.05) for 30s."
+        - alert: DemoAppHighMemory
+          expr: sum by (pod) (container_memory_working_set_bytes{namespace="monitoring-demo", container="nginx"}) / sum by (pod) (kube_pod_container_resource_limits{namespace="monitoring-demo", container="nginx", resource="memory"}) > 0.8
+          for: 1m
+          labels: {severity: warning}
+          annotations:
+            summary: "Memory above 80% of limit on {{ $labels.pod }}"
+        - alert: DemoAppHighRequestRate
+          expr: sum(rate(nginx_http_requests_total{namespace="monitoring-demo"}[1m])) > 50
+          for: 30s
+          labels: {severity: info}
+          annotations:
+            summary: "Traffic spike: {{ $value | humanize }} req/s"
+        - alert: DemoAppDown
+          expr: (kube_deployment_status_replicas_available{namespace="monitoring-demo", deployment="demo-app"} or on() vector(0)) < 1
+          for: 30s
+          labels: {severity: critical}
+          annotations:
+            summary: "demo-app has no available replicas"
+            description: "No ready pods behind the demo-app Service - users get errors."
